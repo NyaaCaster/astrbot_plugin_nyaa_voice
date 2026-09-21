@@ -1,0 +1,18 @@
+# 私密配置（本插件无需 .env，保留规则以防日后添加）
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# IDE
+.vscode/
+.idea/
+
+# 临时文件
+temp/
+
+# OS
+.DS_Store
+Thumbs.db

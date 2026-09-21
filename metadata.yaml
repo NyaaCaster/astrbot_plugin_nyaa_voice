@@ -1,0 +1,8 @@
+name: astrbot_plugin_nyaa_voice
+display_name: Nyaa猫猫语音
+desc: 让猫猫在被要求、或以语音对话时，用 TTS 语音回复；其余情况一律文字回复。
+help: 本插件无需配置，安装即用。触发语音回复的三种情况：① 对话中明确要求猫猫用语音/口头方式回复（由 LLM 理解语义，非关键词匹配）；② 用户直接发送语音消息（如一对一聊天中）；③ 猫猫被 @ 时，所引用的消息是用户的语音消息。除此之外，猫猫一律使用文字回复。插件不修改 AstrBot 的任何全局设置，也不会写入持久状态，每次判定独立生效。
+version: 1.0.0
+author: NyaaCaster
+repo: https://github.com/NyaaCaster/astrbot_plugin_nyaa_voice
+astrbot_version: ">=4.0.0"
