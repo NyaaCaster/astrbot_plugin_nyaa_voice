@@ -22,9 +22,11 @@ from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.message_components import Plain, Record
 from astrbot.api.star import Context, Star
+from astrbot.core.agent.message import TextPart
 
 # 事件级标记：LLM 工具判定需要语音回复时打上，仅供当条消息使用
 _VOICE_REPLY_FLAG = "_nyaa_voice_reply"
+_VOICE_INPUT_TAG = "[voice]"
 
 
 class NyaaVoicePlugin(Star):
@@ -47,12 +49,44 @@ class NyaaVoicePlugin(Star):
 
     @filter.on_llm_request()
     async def _on_llm_request(self, event: AstrMessageEvent, req):
-        """检测到用户本条为语音输入时，直接激活语音回复。"""
-        if not self._is_voice_input(event):
+        """检测语音输入标记或原始语音段，并从 LLM 正文剥离控制标记。"""
+        prompt = getattr(req, "prompt", None)
+        tagged_prompt = self._strip_voice_input_tag(prompt)
+        tagged_voice_input = tagged_prompt is not None
+        if tagged_voice_input:
+            # [voice] 是传输层控制头，只用于识别请求类型，绝不作为用户正文交给 LLM。
+            req.prompt = tagged_prompt
+
+        if not tagged_voice_input and not self._is_voice_input(event):
             return
 
         event.set_extra(_VOICE_REPLY_FLAG, True)
-        logger.info("[NyaaVoice] 用户语音输入，已激活语音回复")
+        source = "[voice] 控制头" if tagged_voice_input else "平台语音段"
+        if tagged_voice_input:
+            # 将检测结果作为临时控制说明注入，而不是把控制头留在用户正文中。
+            req.extra_user_content_parts.append(
+                TextPart(
+                    text=(
+                        "【NyaaVoice 输入类型】本轮请求带有语音输入控制标记 "
+                        "[voice]。该标记只是传输层的消息类型识别符号，不是用户说出的文字，"
+                        "也不是对话正文。请调用 reply_with_voice 工具，以 TTS 语音形式回复。"
+                    )
+                ).mark_as_temp()
+            )
+        logger.info(f"[NyaaVoice] 检测到{source}，已激活语音回复")
+
+    @staticmethod
+    def _strip_voice_input_tag(prompt: str | None) -> str | None:
+        """只从正文开头消费一次 [voice] 控制头；命中时返回去头后的正文。"""
+        if not isinstance(prompt, str):
+            return None
+        stripped = prompt.lstrip()
+        if not stripped.startswith(_VOICE_INPUT_TAG):
+            return None
+        remainder = stripped[len(_VOICE_INPUT_TAG):]
+        if remainder and not remainder[0].isspace():
+            return None
+        return remainder.lstrip()
 
     # ------------------------------------------------------------------
     # 执行出口：LLM 工具
@@ -68,6 +102,8 @@ class NyaaVoicePlugin(Star):
         ## 什么时候应该调用（正向触发）
         - 用户明确要求语音回复：用语音回复我 / 语音回我 / 说给我听 / 念出来 /
           读出来 / 我要听你说话 / 想听你的声音 / 别打字了说 / 语音回答
+        - 本轮系统控制提示指出请求带有 [voice] 标记：必须调用本工具。
+          [voice] 仅是传输层消息类型识别符号，不是用户说的话或对话正文。
         - 用户本条消息以语音发送，且期待你同样用语音回应
           （系统会在提示中告知"用户本条消息是通过语音发送的"）
         - 用户表达想听声音、想被哄、想听你说话的意愿
